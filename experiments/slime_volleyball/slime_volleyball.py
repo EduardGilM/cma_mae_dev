@@ -13,6 +13,10 @@ from alive_progress import alive_bar
 
 from dask.distributed import Client, LocalCluster
 
+import sys
+sys.path.insert(0, '../../slimevolleygym')
+sys.path.insert(0, '../..')
+
 from ribs.archives import CVTArchive, GridArchive
 from ribs.emitters import (AnnealingEmitter, GaussianEmitter, 
                            IsoLineEmitter, ImprovementEmitter,
@@ -25,8 +29,7 @@ from ribs.visualize import grid_archive_heatmap, _retrieve_cmap
 import cv2
 import gym
 import copy
-import sys
-sys.path.insert(0, '../../slimevolleygym')
+
 import slimevolleygym
 from slimevolleygym.slimevolley import SlimeVolleyEnv
 import slimevolleygym.mlp as mlp
