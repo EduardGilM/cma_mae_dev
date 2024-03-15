@@ -1,41 +1,36 @@
-
-import os
 import csv
-from pydoc import cli
+import os
+import sys
 import time
 from pathlib import Path
+from pydoc import cli
 
 import fire
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse, Rectangle
 import numpy as np
 from alive_progress import alive_bar
-
 from dask.distributed import Client, LocalCluster
+from matplotlib.patches import Ellipse, Rectangle
 
-import sys
 sys.path.insert(0, '../../slimevolleygym')
 sys.path.insert(0, '../..')
 
-from ribs.archives import CVTArchive, GridArchive
-from ribs.emitters import (AnnealingEmitter, GaussianEmitter, 
-                           IsoLineEmitter, ImprovementEmitter,
-                           OptimizingEmitter,
-                           GradientEmitter, GradientAnnealingEmitter,
-                           GradientImprovementEmitter)
-from ribs.optimizers import Optimizer
-from ribs.visualize import grid_archive_heatmap, _retrieve_cmap
+import copy
 
 import cv2
 import gym
-import copy
-
-import slimevolleygym
-from slimevolleygym.slimevolley import SlimeVolleyEnv
-import slimevolleygym.mlp as mlp
-from slimevolleygym.mlp import Model
-
 import pandas as pd
+import slimevolleygym
+import slimevolleygym.mlp as mlp
+from ribs.archives import CVTArchive, GridArchive
+from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
+                           GradientAnnealingEmitter, GradientEmitter,
+                           GradientImprovementEmitter, ImprovementEmitter,
+                           IsoLineEmitter, OptimizingEmitter)
+from ribs.optimizers import Optimizer
+from ribs.visualize import _retrieve_cmap, grid_archive_heatmap
+from slimevolleygym.mlp import Model
+from slimevolleygym.slimevolley import SlimeVolleyEnv
 
 
 def simulate(model, seed=None, video_env=None, save_video_to=None):
@@ -76,9 +71,10 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     obs_right = env.reset()
     obs_left = copy.deepcopy(obs_right)
     done = False
-    
+
     while not done:
-        action_right, action_left = policy.predict(obs_right), policy.predict(obs_left)
+        action_right, action_left = policy.predict(obs_right), policy.predict(
+            obs_left)
         obs_right, reward, done, info = env.step(action_right, action_left)
         if not video_env is None:
             if save_video_to is None:
@@ -90,7 +86,9 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
                 if 'video' in vars():
                     video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 else:
-                    video = cv2.VideoWriter(save_video_to, cv2.VideoWriter_fourcc(*'mp4v'), 40, img.shape[:2][::-1])
+                    video = cv2.VideoWriter(save_video_to,
+                                            cv2.VideoWriter_fourcc(*'mp4v'), 40,
+                                            img.shape[:2][::-1])
                     video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         obs_left = info['otherObs']
         total_reward += reward
@@ -213,18 +211,22 @@ def create_optimizer(algorithm, dim, alpha=1.0, resolution=100, seed=None):
     batch_size = 36
     num_emitters = 15
     grid_dims = (resolution, resolution)
-    
+
     # Create archive.
     if algorithm in [
-            "map_elites", "map_elites_line",
-            "cma_me", "cma_me_star", "cma_me_io",
+            "map_elites",
+            "map_elites_line",
+            "cma_me",
+            "cma_me_star",
+            "cma_me_io",
     ]:
         archive = GridArchive(grid_dims, bounds, seed=seed)
     elif algorithm in ["cma_mae"]:
         archive = GridArchive(
-                grid_dims, bounds, 
-                archive_learning_rate=alpha, 
-                seed=seed,
+            grid_dims,
+            bounds,
+            archive_learning_rate=alpha,
+            seed=seed,
         )
     else:
         raise ValueError(f"Algorithm `{algorithm}` is not recognized")
@@ -307,6 +309,7 @@ def create_optimizer(algorithm, dim, alpha=1.0, resolution=100, seed=None):
 
     return Optimizer(archive, emitters), passive_archive
 
+
 def save_heatmap(archive, heatmap_path):
     """Saves a heatmap of the archive to the given path.
 
@@ -319,6 +322,7 @@ def save_heatmap(archive, heatmap_path):
     plt.tight_layout()
     plt.savefig(heatmap_path)
     plt.close(plt.gcf())
+
 
 def run_experiment(algorithm,
                    trial_id,
@@ -333,37 +337,40 @@ def run_experiment(algorithm,
                    log_freq=1,
                    log_arch_freq=1000,
                    seed=None):
-    
+
     # Create a directory for this specific trial.
     if algorithm in ["cma_mae"]:
-        s_logdir = os.path.join(outdir, f"{algorithm}_{resolution}_{alpha}", f"trial_{trial_id}")
+        s_logdir = os.path.join(outdir, f"{algorithm}_{resolution}_{alpha}",
+                                f"trial_{trial_id}")
     else:
-        s_logdir = os.path.join(outdir, f"{algorithm}_{resolution}", f"trial_{trial_id}")
+        s_logdir = os.path.join(outdir, f"{algorithm}_{resolution}",
+                                f"trial_{trial_id}")
     logdir = Path(s_logdir)
     if not logdir.is_dir():
         logdir.mkdir()
-    
+
     # Create a new summary file
     summary_filename = os.path.join(s_logdir, f"summary.csv")
     if os.path.exists(summary_filename):
         os.remove(summary_filename)
     with open(summary_filename, 'w') as summary_file:
         writer = csv.writer(summary_file)
-        writer.writerow(['Iteration', 'QD-Score', 'Coverage', 'Maximum', 'Average'])
-   
+        writer.writerow(
+            ['Iteration', 'QD-Score', 'Coverage', 'Maximum', 'Average'])
+
     # If we are running a resolution experiment, override the resolution.
     if arch_res_exp:
 
         # Linearly interpolate
         index = 0.0
-        if total_trials > 1: 
-            index = trial_id / (total_trials-1.0)
+        if total_trials > 1:
+            index = trial_id / (total_trials - 1.0)
 
         min_count = 50
         max_count = 500
         new_resolution = index * (max_count - min_count) + min_count
         resolution = int(new_resolution + 1e-9)
-        cell_count = resolution ** 2
+        cell_count = resolution**2
 
         ratio = cell_count / (100.0 * 100.0)
         alpha = 1.0 - np.power(1.0 - alpha, ratio)
@@ -372,7 +379,8 @@ def run_experiment(algorithm,
             trial_id, resolution, alpha))
 
     is_init_pop = algorithm in [
-        'map_elites', 'map_elites_line',
+        'map_elites',
+        'map_elites_line',
     ]
 
     # Select the objective based on the input.
@@ -380,10 +388,11 @@ def run_experiment(algorithm,
     dim = policy.param_count
 
     optimizer, passive_archive = create_optimizer(
-            algorithm, dim, 
-            alpha=alpha, 
-            resolution=resolution,
-            seed=seed,
+        algorithm,
+        dim,
+        alpha=alpha,
+        resolution=resolution,
+        seed=seed,
     )
     archive = optimizer.archive
 
@@ -394,7 +403,8 @@ def run_experiment(algorithm,
 
         if is_init_pop:
             # Sample initial population
-            sols = np.array([np.random.normal(size=dim) for _ in range(init_pop)])
+            sols = np.array(
+                [np.random.normal(size=dim) for _ in range(init_pop)])
 
             objs, measures = simulate_parallel(client, sols, seed)
             best = max(best, max(objs))
@@ -418,30 +428,33 @@ def run_experiment(algorithm,
 
             non_logging_time += time.time() - itr_start
             progress()
-            
+
             # Save the archive at the given frequency.
             # Always save on the final iteration.
             final_itr = itr == itrs
-            if (itr > 0 and itr % (log_arch_freq // len(client.cluster.workers)) == 0) or final_itr:
+            if (itr > 0 and itr % (log_arch_freq // len(client.cluster.workers))
+                    == 0) or final_itr:
 
                 # Save a full archive for analysis.
-                df = passive_archive.as_pandas(include_solutions = final_itr)
+                df = passive_archive.as_pandas(include_solutions=final_itr)
                 df.to_pickle(os.path.join(s_logdir, f"archive_{itr:08d}.pkl"))
 
                 # Save a heatmap image to observe how the trial is doing.
-                save_heatmap(passive_archive, os.path.join(s_logdir, f"heatmap_{itr:08d}.png"))
+                save_heatmap(passive_archive,
+                             os.path.join(s_logdir, f"heatmap_{itr:08d}.png"))
 
             # Update the summary statistics for the archive
             if (itr > 0 and itr % log_freq == 0) or final_itr:
                 with open(summary_filename, 'a') as summary_file:
                     writer = csv.writer(summary_file)
-                    
+
                     sum_obj = 0
                     num_filled = 0
                     num_bins = passive_archive.bins
-                    for sol, obj, beh, idx, meta in zip(*passive_archive.data()):
+                    for sol, obj, beh, idx, meta in zip(
+                            *passive_archive.data()):
                         num_filled += 1
-                        sum_obj += obj    
+                        sum_obj += obj
                     qd_score = sum_obj / num_bins
                     average = sum_obj / num_filled
                     coverage = 100.0 * num_filled / num_bins
@@ -450,17 +463,17 @@ def run_experiment(algorithm,
 
 
 def slime_volleyball_main(algorithm,
-                  workers=4,
-                  trials=20,
-                  arch_res_exp=False,
-                  alpha=1.0,
-                  resolution=50,
-                  init_pop=100,
-                  itrs=10000,
-                  outdir="logs",
-                  log_freq=1,
-                  log_arch_freq=1000,
-                  seed=None):
+                          workers=4,
+                          trials=20,
+                          arch_res_exp=False,
+                          alpha=1.0,
+                          resolution=50,
+                          init_pop=100,
+                          itrs=10000,
+                          outdir="logs",
+                          log_freq=1,
+                          log_arch_freq=1000,
+                          seed=None):
     """Experiment tool for the slime_volleyball domain from the CMA-ME paper.
 
     Args:
@@ -477,11 +490,15 @@ def slime_volleyball_main(algorithm,
         log_arch_freq (int): Number of iterations between saving an archive and generating heatmaps.
         seed (int): Seed for the algorithm. By default, there is no seed.
     """
- 
+
     if arch_res_exp:
-        print(f"Running arch res experiment on slime volleyball and alpha={alpha}.")
+        print(
+            f"Running arch res experiment on slime volleyball and alpha={alpha}."
+        )
     else:
-        print(f"Running slime volleyball, alpha={alpha}, and resolution={resolution}.")
+        print(
+            f"Running slime volleyball, alpha={alpha}, and resolution={resolution}."
+        )
 
     # Create a shared logging directory for the experiments for this algorithm.
     if algorithm in ["cma_mae"]:
@@ -497,14 +514,17 @@ def slime_volleyball_main(algorithm,
 
     # Run all trials in parallel.
     cluster = LocalCluster(
-            processes=True,  # Each worker is a process.
-            n_workers=workers,  # Create one worker per trial (assumes >=trials cores)
-            threads_per_worker=1,  # Each worker process is single-threaded.
-        )
+        processes=True,  # Each worker is a process.
+        n_workers=workers,  # Create one worker per trial (assumes >=trials cores)
+        threads_per_worker=1,  # Each worker process is single-threaded.
+    )
     client = Client(cluster)
     for cur_id in range(trials):
         run_experiment(
-            algorithm, cur_id, trials, client, 
+            algorithm,
+            cur_id,
+            trials,
+            client,
             alpha=alpha,
             arch_res_exp=arch_res_exp,
             resolution=resolution,
@@ -530,21 +550,21 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
         the highest fitness.
     '''
     df = pd.read_pickle(archive_path)
-    
-    for i, mea in enumerate(df.columns[df.columns.str.startswith('behavior')].tolist()):
-        df[mea+'_bin'] = pd.qcut(df[mea], qcut_quantile[i])
-    
-    df.sort_values(
-        by=df.columns[df.columns.str.endswith('bin')].tolist() + ['objective'],
-        ascending=max_mea + [True], 
-        inplace=True
-    )
+
+    for i, mea in enumerate(
+            df.columns[df.columns.str.startswith('behavior')].tolist()):
+        df[mea + '_bin'] = pd.qcut(df[mea], qcut_quantile[i])
+
+    df.sort_values(by=df.columns[df.columns.str.endswith('bin')].tolist() +
+                   ['objective'],
+                   ascending=max_mea + [True],
+                   inplace=True)
 
     plt.figure(figsize=(8, 6))
     cmap = _retrieve_cmap('viridis')
 
-    lower_mea_bounds = (0.0,0.0)
-    upper_mea_bounds = (200,50)
+    lower_mea_bounds = (0.0, 0.0)
+    upper_mea_bounds = (200, 50)
     x_dim, y_dim = (50, 50)
     x_bounds = np.linspace(lower_mea_bounds[0], upper_mea_bounds[0], x_dim + 1)
     y_bounds = np.linspace(lower_mea_bounds[1], upper_mea_bounds[1], y_dim + 1)
@@ -563,41 +583,45 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
     vmin = 0
     vmax = 100
     t = ax.pcolormesh(x_bounds,
-                    y_bounds,
-                    colors,
-                    cmap=cmap,
-                    vmin=vmin,
-                    vmax=vmax,
-                    **pcm_kwargs)
+                      y_bounds,
+                      colors,
+                      cmap=cmap,
+                      vmin=vmin,
+                      vmax=vmax,
+                      **pcm_kwargs)
 
     ax.figure.colorbar(t, ax=ax, pad=0.1)
-    patch_coords = (
-        x_bounds[df.tail(1).index_0] + (upper_mea_bounds[0]-lower_mea_bounds[0])/x_dim/2,
-        y_bounds[df.tail(1).index_1] + (upper_mea_bounds[1]-lower_mea_bounds[1])/y_dim/2
-    )
-    unit_cell_size = (
-        (upper_mea_bounds[0]-lower_mea_bounds[0])/x_dim,
-        (upper_mea_bounds[1]-lower_mea_bounds[1])/y_dim
-    )
-    ax.add_patch(Ellipse(patch_coords, width=unit_cell_size[0]*7.5, height=unit_cell_size[1]*7.5, color='red', fill=False))
+    patch_coords = (x_bounds[df.tail(1).index_0] +
+                    (upper_mea_bounds[0] - lower_mea_bounds[0]) / x_dim / 2,
+                    y_bounds[df.tail(1).index_1] +
+                    (upper_mea_bounds[1] - lower_mea_bounds[1]) / y_dim / 2)
+    unit_cell_size = ((upper_mea_bounds[0] - lower_mea_bounds[0]) / x_dim,
+                      (upper_mea_bounds[1] - lower_mea_bounds[1]) / y_dim)
     ax.add_patch(
-        Rectangle(
-            (x_bounds[df.tail(1).index_0], y_bounds[df.tail(1).index_1]), 
-            width=unit_cell_size[0], 
-            height=unit_cell_size[1], 
-            color='red', 
-            fill=True
-        )
-    )
+        Ellipse(patch_coords,
+                width=unit_cell_size[0] * 7.5,
+                height=unit_cell_size[1] * 7.5,
+                color='red',
+                fill=False))
+    ax.add_patch(
+        Rectangle((x_bounds[df.tail(1).index_0], y_bounds[df.tail(1).index_1]),
+                  width=unit_cell_size[0],
+                  height=unit_cell_size[1],
+                  color='red',
+                  fill=True))
 
     plt.tight_layout()
 
-    model = df.tail(1).loc[:,df.columns.str.startswith('solution')].to_numpy().squeeze()
+    model = df.tail(
+        1).loc[:, df.columns.str.startswith('solution')].to_numpy().squeeze()
 
     best_obj = 5
     worst_obj = -5
-    restored_obj = df.tail(1).objective.iloc[0] / 100 * (best_obj - worst_obj) + worst_obj
-    print(f" behavior_0(num_hits):{df.tail(1).behavior_0.iloc[0]} \n behavior_1(num_volleys):{df.tail(1).behavior_1.iloc[0]} \n objective:{restored_obj}")
+    restored_obj = df.tail(1).objective.iloc[0] / 100 * (best_obj -
+                                                         worst_obj) + worst_obj
+    print(
+        f" behavior_0(num_hits):{df.tail(1).behavior_0.iloc[0]} \n behavior_1(num_volleys):{df.tail(1).behavior_1.iloc[0]} \n objective:{restored_obj}"
+    )
     if outdir is None:
         plt.show()
         env = SlimeVolleyEnv()
@@ -609,7 +633,7 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
         outdir = Path(outdir)
         if not outdir.is_dir():
             outdir.mkdir(parents=True)
-        
+
         plt.savefig(heatmap_path)
         plt.close(plt.gcf())
 
@@ -618,50 +642,44 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
 
         with open(txt_path, 'w') as info_txt:
             info_txt.writelines([
-                f"behavior_0(num_hits)   : {df.tail(1).behavior_0.iloc[0]}\n", 
+                f"behavior_0(num_hits)   : {df.tail(1).behavior_0.iloc[0]}\n",
                 f"behavior_1(num_volleys): {df.tail(1).behavior_1.iloc[0]}\n",
                 f"objective              : {restored_obj}"
             ])
 
 
 def collect_video_data():
-    param_seq = [
-        {
-            "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
-            "max_mea": [True, True],
-            "qcut_quantile": [1, 1],
-            "seed": 14,
-            "outdir": "video_data/best"
-        },
-        {
-            "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
-            "max_mea": [True, True],
-            "qcut_quantile": [5, 5],
-            "seed": 14,
-            "outdir": "video_data/tt"
-        },
-        {
-            "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
-            "max_mea": [True, False],
-            "qcut_quantile": [5, 5],
-            "seed": 14,
-            "outdir": "video_data/tf"
-        },
-        {
-            "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
-            "max_mea": [False, True],
-            "qcut_quantile": [5, 5],
-            "seed": 14,
-            "outdir": "video_data/ft"
-        },
-        {
-            "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
-            "max_mea": [False, False],
-            "qcut_quantile": [5, 5],
-            "seed": 14,
-            "outdir": "video_data/ff"
-        }
-    ]
+    param_seq = [{
+        "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+        "max_mea": [True, True],
+        "qcut_quantile": [1, 1],
+        "seed": 14,
+        "outdir": "video_data/best"
+    }, {
+        "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+        "max_mea": [True, True],
+        "qcut_quantile": [5, 5],
+        "seed": 14,
+        "outdir": "video_data/tt"
+    }, {
+        "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+        "max_mea": [True, False],
+        "qcut_quantile": [5, 5],
+        "seed": 14,
+        "outdir": "video_data/tf"
+    }, {
+        "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+        "max_mea": [False, True],
+        "qcut_quantile": [5, 5],
+        "seed": 14,
+        "outdir": "video_data/ft"
+    }, {
+        "archive_path": "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+        "max_mea": [False, False],
+        "qcut_quantile": [5, 5],
+        "seed": 14,
+        "outdir": "video_data/ff"
+    }]
 
     for param in param_seq:
         play_policy(**param)
@@ -669,12 +687,12 @@ def collect_video_data():
 
 if __name__ == '__main__':
     fire.Fire(slime_volleyball_main)
-    
+
     # play_policy(
-    #     "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl", 
-    #     max_mea=[True, True], 
-    #     qcut_quantile=[5, 5], 
-    #     seed=14, 
+    #     "logs/cma_mae_50_0.01/trial_0/archive_00002500.pkl",
+    #     max_mea=[True, True],
+    #     qcut_quantile=[5, 5],
+    #     seed=14,
     #     outdir=None
     # )
 
