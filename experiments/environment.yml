@@ -197,3 +197,6 @@ dependencies:
       - yarl==1.9.2
       - zict==3.0.0
       - zipp==3.17.0
+      - tyro
+      - stable-baselines3
+      - tensorboard
