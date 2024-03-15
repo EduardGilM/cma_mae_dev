@@ -1,0 +1,153 @@
+"""Provides the DQNEmitter."""
+import logging
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from ribs.archives import ArchiveBase
+from ribs.emitters import EmitterBase
+from ribs.emitters.replay_buffer import ReplayBuffer
+from torch import nn, optim
+
+logger = logging.getLogger(__name__)
+
+
+class LinearNetwork(nn.Module):
+
+    def __init__(self, action_dim, obs_dim):
+        super().__init__()
+        self.model = nn.Linear(obs_dim, action_dim, bias=False)
+
+    def forward(self, x):
+        return self.model(x)
+
+    def action(self, obs):
+        """Computes action for one observation."""
+        obs = torch.from_numpy(obs[None].astype(np.float32))
+        return self(obs)[0].argmax().cpu().detach().numpy()
+
+    def serialize(self):
+        """Returns 1D array with all parameters in the actor."""
+        return np.concatenate(
+            [p.data.cpu().detach().numpy().ravel() for p in self.parameters()])
+
+    def deserialize(self, array):
+        """Loads parameters from 1D array."""
+        array = np.copy(array)
+        arr_idx = 0
+        for param in self.model.parameters():
+            shape = tuple(param.data.shape)
+            length = np.product(shape)
+            block = array[arr_idx:arr_idx + length]
+            if len(block) != length:
+                raise ValueError("Array not long enough!")
+            block = np.reshape(block, shape)
+            arr_idx += length
+            param.data = torch.from_numpy(block).float()
+        return self
+
+
+class DQNEmitter(EmitterBase):
+    """Emitter that uses DQN to optimize solutions."""
+
+    def __init__(
+        self,
+        archive: ArchiveBase,
+        x0: np.ndarray,
+        sigma0: float,
+        batch_size: int,
+        replay_buffer: ReplayBuffer,
+        args: dict,
+        action_dim: int,
+        obs_dim: int,
+        bounds=None,
+        seed=None,
+    ):
+        self._rng = np.random.default_rng(seed)
+        self._batch_size = batch_size
+        self._x0 = np.array(x0, dtype=archive.dtype)
+        self._sigma0 = sigma0
+        self._replay_buffer = replay_buffer
+        self._args = args
+        self._action_dim = action_dim
+        self._obs_dim = obs_dim
+
+        if bounds is not None:
+            raise ValueError("Bounds not supported for this emitter")
+
+        EmitterBase.__init__(
+            self,
+            archive,
+            len(self._x0),
+            bounds,
+        )
+
+        self._device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+
+    @property
+    def batch_size(self):
+        return self._batch_size
+
+    def ask(self, grad_estimate=False):
+        """Uses DQN to optimize solutions sampled from the archive.
+
+        grad_estimate is included for API compatibility.
+        """
+        if self.archive.empty:
+            logger.info("Sampling solutions from Gaussian distribution")
+            return np.expand_dims(self._x0, axis=0) + self._rng.normal(
+                scale=self._sigma0,
+                size=(self._batch_size, self.solution_dim),
+            ).astype(self.archive.dtype)
+
+        logger.info("Sampling solutions with DQN variation")
+
+        dqn_solutions = []
+        for _ in range(self._batch_size):
+            sol = self.archive.get_random_elite()[0]
+
+            # DQN training; adopted from cleanrl.
+            q_network = LinearNetwork(self._action_dim,
+                                      self._obs_dim).deserialize(sol)
+            target_network = LinearNetwork(self._action_dim,
+                                           self._obs_dim).deserialize(sol)
+            optimizer = optim.Adam(q_network.parameters(),
+                                   lr=self._args["learning_rate"])
+
+            print("NEW SOLUTION")
+            for train_itr in range(self._args["train_itrs"]):
+                data = self._replay_buffer.sample_tensors(
+                    self._args["batch_size"])
+                with torch.no_grad():
+                    target_max, _ = target_network(data.next_obs).max(dim=1)
+                    td_target = data.reward.flatten(
+                    ) + self._args["gamma"] * target_max * (1 -
+                                                            data.done.flatten())
+                old_val = q_network(data.obs).gather(
+                    1, data.action.type(torch.int64)).squeeze()
+                loss = F.mse_loss(td_target, old_val)
+
+                # TODO: Check losses are going down
+                print(loss)
+
+                # optimize the model
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                # update target network
+                if train_itr % self._args["target_freq"] == 0:
+                    for target_network_param, q_network_param in zip(
+                            target_network.parameters(),
+                            q_network.parameters()):
+                        target_network_param.data.copy_(
+                            self._args["tau"] * q_network_param.data +
+                            (1.0 - self._args["tau"]) *
+                            target_network_param.data)
+
+                # Add new solution.
+                dqn_solutions.append(q_network.serialize())
+
+        logger.info("Solutions with DQN variation: %d", len(dqn_solutions))
+        return dqn_solutions
