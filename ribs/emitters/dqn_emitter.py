@@ -109,13 +109,12 @@ class DQNEmitter(EmitterBase):
 
             # DQN training; adopted from cleanrl.
             q_network = LinearNetwork(self._action_dim,
-                                      self._obs_dim).deserialize(sol)
+                                      self._obs_dim).deserialize(sol).to(self._device)
             target_network = LinearNetwork(self._action_dim,
-                                           self._obs_dim).deserialize(sol)
+                                           self._obs_dim).deserialize(sol).to(self._device)
             optimizer = optim.Adam(q_network.parameters(),
                                    lr=self._args["learning_rate"])
 
-            print("NEW SOLUTION")
             for train_itr in range(self._args["train_itrs"]):
                 data = self._replay_buffer.sample_tensors(
                     self._args["batch_size"])
@@ -127,9 +126,6 @@ class DQNEmitter(EmitterBase):
                 old_val = q_network(data.obs).gather(
                     1, data.action.type(torch.int64)).squeeze()
                 loss = F.mse_loss(td_target, old_val)
-
-                # TODO: Check losses are going down
-                print(loss)
 
                 # optimize the model
                 optimizer.zero_grad()
