@@ -1,3 +1,8 @@
+"""Specialized script for DQN-ME in lunar lander.
+
+Usage:
+    python lunar_lander_dqnme.py dqn_me
+"""
 import csv
 import os
 import sys
