@@ -1,3 +1,10 @@
+"""Runs lunar lander experiments.
+
+Algorithms for the paper: cma_mae, cma_me, map_elites_line, map_elites, dqn_me
+
+Usage:
+    python lunar_lander.py [ALGORITHM]
+"""
 import csv
 import os
 import sys
@@ -22,6 +29,8 @@ from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
                            GradientAnnealingEmitter, GradientEmitter,
                            GradientImprovementEmitter, ImprovementEmitter,
                            IsoLineEmitter, OptimizingEmitter)
+from ribs.emitters.dqn_emitter import DQNEmitter, LinearNetwork
+from ribs.emitters.replay_buffer import Experience, ReplayBuffer
 from ribs.optimizers import Optimizer
 from ribs.visualize import _retrieve_cmap, grid_archive_heatmap
 
@@ -56,7 +65,7 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
 
     action_dim = env.action_space.n
     obs_dim = env.observation_space.shape[0]
-    model = model.reshape((action_dim, obs_dim))
+    episode_length = env.spec.max_episode_steps
 
     total_reward = 0.0
     impact_x_pos = None
@@ -65,8 +74,26 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     obs, _ = env.reset(seed=seed)
     done = False
 
+    trajectory = {
+        "state":
+            np.full((episode_length, obs_dim), np.nan, dtype=np.float32),
+        "action":
+            np.full((episode_length,), np.nan, dtype=np.float32),
+        "reward":
+            np.full((episode_length,), np.nan, dtype=np.float32),
+        "next_state":
+            np.full((episode_length, obs_dim), np.nan, dtype=np.float32),
+        "done":
+            np.full((episode_length,), np.nan, dtype=np.float32),
+    }
+
+    pt_model = LinearNetwork(action_dim, obs_dim).deserialize(model).to("cpu")
+
+    timestep = 0
     while not done:
-        action = np.argmax(model @ obs)  # Linear policy.
+        action = pt_model.action(obs)  # Linear policy.
+
+        old_obs = obs
         obs, reward, terminated, truncated, _ = env.step(action)
         if not save_video_to is None:
             # if has save_video_to, generate video and save
@@ -94,6 +121,15 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
             impact_x_pos = x_pos
             impact_y_vel = y_vel
 
+        # Save trajectory info.
+        trajectory['state'][timestep] = old_obs
+        trajectory['action'][timestep] = action
+        trajectory['reward'][timestep] = reward
+        trajectory['next_state'][timestep] = obs
+        trajectory['done'][timestep] = done
+
+        timestep += 1
+
     # If the lunar lander did not land, set the x-pos to the one from the final
     # timestep, and set the y-vel to the max y-vel (we use min since the lander
     # goes down).
@@ -112,21 +148,22 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     worst_obj = -600
     obj = (total_reward - worst_obj) / (best_obj - worst_obj) * 100
 
-    return obj, impact_x_pos, impact_y_vel
+    return obj, impact_x_pos, impact_y_vel, trajectory
 
 
 def simulate_parallel(client, sols, seed):
     futures = client.map(lambda model: simulate(model, seed), sols)
     results = client.gather(futures)
 
-    objs, meas = [], []
+    objs, meas, trajectories = [], [], []
 
     # Process the results.
-    for obj, impact_x_pos, impact_y_vel in results:
+    for obj, impact_x_pos, impact_y_vel, trajectory in results:
         objs.append(obj)
         meas.append([impact_x_pos, impact_y_vel])
+        trajectories.append(trajectory)
 
-    return np.array(objs), np.array(meas)
+    return np.array(objs), np.array(meas), trajectories
 
 
 def run_search(client, scheduler, env_seed, iterations, log_freq):
@@ -195,12 +232,17 @@ def run_search(client, scheduler, env_seed, iterations, log_freq):
     return metrics
 
 
-def create_optimizer(algorithm,
-                     dim,
-                     alpha=1.0,
-                     resolution=100,
-                     minf=0.0,
-                     seed=None):
+def create_optimizer(
+    algorithm,
+    dim,
+    replay_buffer,  # Can be None.
+    action_dim,
+    obs_dim,
+    alpha=1.0,
+    resolution=100,
+    minf=0.0,
+    seed=None,
+):
     """Creates an optimizer based on the algorithm name.
 
     Args:
@@ -221,6 +263,7 @@ def create_optimizer(algorithm,
 
     # Create archive.
     if algorithm in [
+            "dqn_me",
             "map_elites",
             "map_elites_line",
             "cma_me",
@@ -253,7 +296,37 @@ def create_optimizer(algorithm,
     # all do the same thing.
     emitter_seeds = [None] * num_emitters if seed is None else list(
         range(seed, seed + num_emitters))
-    if algorithm in ["map_elites"]:
+    if algorithm in ["dqn_me"]:
+        emitters = [
+            # Two emitters, each with half the total batch size.
+            IsoLineEmitter(
+                archive,
+                initial_sol,
+                iso_sigma=0.5,
+                line_sigma=0.2,
+                batch_size=(num_emitters * batch_size) // 2,
+                seed=emitter_seeds[0],
+            ),
+            DQNEmitter(
+                archive,
+                initial_sol,
+                sigma0=0.5,
+                batch_size=(num_emitters * batch_size) // 2,
+                replay_buffer=replay_buffer,
+                seed=emitter_seeds[1],
+                action_dim=action_dim,
+                obs_dim=obs_dim,
+                args={
+                    "batch_size": 128,
+                    "train_itrs": 10,
+                    "target_freq": 2,
+                    "gamma": 0.99,
+                    "learning_rate": 2.5e-4,
+                    "tau": 1.0,
+                },
+            ),
+        ]
+    elif algorithm in ["map_elites"]:
         emitters = [
             GaussianEmitter(archive,
                             initial_sol,
@@ -346,7 +419,7 @@ def run_experiment(algorithm,
                    arch_res_exp=False,
                    resolution=100,
                    init_pop=100,
-                   itrs=10000,
+                   itrs=2500,
                    minf=0.0,
                    outdir="logs",
                    log_freq=1,
@@ -405,9 +478,21 @@ def run_experiment(algorithm,
     obs_dim = env.observation_space.shape[0]
     dim = action_dim * obs_dim
 
+    if algorithm == "dqn_me":
+        replay_buffer = ReplayBuffer(
+            capacity=1_000_000,
+            obs_shape=env.observation_space.shape,
+            action_shape=(1,),
+        )
+    else:
+        replay_buffer = None
+
     optimizer, passive_archive = create_optimizer(
         algorithm,
         dim,
+        replay_buffer,
+        action_dim,
+        obs_dim,
         alpha=alpha,
         resolution=resolution,
         minf=minf,
@@ -417,7 +502,6 @@ def run_experiment(algorithm,
 
     best = 0.0
     non_logging_time = 0.0
-    itrs = itrs // len(client.cluster.workers)
     with alive_bar(itrs) as progress:
 
         if is_init_pop:
@@ -425,7 +509,7 @@ def run_experiment(algorithm,
             sols = np.array(
                 [np.random.normal(size=dim) for _ in range(init_pop)])
 
-            objs, measures = simulate_parallel(client, sols, seed)
+            objs, measures, trajectories = simulate_parallel(client, sols, seed)
             best = max(best, max(objs))
 
             # Add each solution to the archive.
@@ -433,26 +517,38 @@ def run_experiment(algorithm,
                 archive.add(sols[i], objs[i], measures[i])
                 passive_archive.add(sols[i], objs[i], measures[i])
 
-        for itr in range(itrs + 1):
+        for itr in range(1, itrs + 1):
             itr_start = time.time()
 
             sols = optimizer.ask()
-            objs, measures = simulate_parallel(client, sols, seed)
+            objs, measures, trajectories = simulate_parallel(client, sols, seed)
             best = max(best, max(objs))
             optimizer.tell(objs, measures)
+
+            # Add to replay buffer.
+            if algorithm == "dqn_me":
+                for trajectory in trajectories:
+                    for i in range(len(trajectory["reward"])):
+                        if np.isnan(trajectory["reward"][i]):
+                            break
+                        replay_buffer.add(
+                            Experience(trajectory["state"][i],
+                                       trajectory["action"][i],
+                                       trajectory["reward"][i],
+                                       trajectory["next_state"][i],
+                                       trajectory["done"][i]))
 
             # Update the passive elitist archive.
             for i in range(len(sols)):
                 passive_archive.add(sols[i], objs[i], measures[i])
 
             non_logging_time += time.time() - itr_start
-            progress()
+            progress()  # pylint: disable = not-callable
 
             # Save the archive at the given frequency.
             # Always save on the final iteration.
             final_itr = itr == itrs
-            if (itr > 0 and itr % (log_arch_freq // len(client.cluster.workers))
-                    == 0) or final_itr:
+            if itr % log_arch_freq == 0 or final_itr:
 
                 # Save a full archive for analysis.
                 df = passive_archive.as_pandas(include_solutions=final_itr)
@@ -488,7 +584,7 @@ def lunar_lander_main(algorithm,
                       alpha=1.0,
                       resolution=100,
                       init_pop=100,
-                      itrs=10000,
+                      itrs=2500,
                       minf=0.0,
                       outdir="logs",
                       log_freq=1,
