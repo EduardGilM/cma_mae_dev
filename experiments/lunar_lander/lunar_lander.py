@@ -7,28 +7,22 @@ Usage:
 """
 import csv
 import os
-import sys
 import time
 from pathlib import Path
-from pydoc import cli
 
+import cv2
 import fire
+import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
-
-sys.path.insert(0, '../..')
-
-import cv2
-import gymnasium as gym
-import pandas as pd
-from ribs.archives import CVTArchive, GridArchive
+from ribs.archives import GridArchive
 from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
-                           GradientAnnealingEmitter, GradientEmitter,
-                           GradientImprovementEmitter, ImprovementEmitter,
-                           IsoLineEmitter, OptimizingEmitter)
+                           ImprovementEmitter, IsoLineEmitter,
+                           OptimizingEmitter)
 from ribs.emitters.dqn_emitter import DQNEmitter, LinearNetwork
 from ribs.emitters.replay_buffer import Experience, ReplayBuffer
 from ribs.optimizers import Optimizer
