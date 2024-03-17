@@ -125,6 +125,8 @@ def simulate(model,
     env.seed(seed)
     np.random.seed(seed)
 
+    torch.set_num_threads(1)
+
     policy = SlimeMLP(mlp.games['slimevolley']).deserialize(model).to("cpu")
 
     total_reward = 0.0
