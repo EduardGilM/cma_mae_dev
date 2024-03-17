@@ -454,7 +454,7 @@ def run_experiment(algorithm,
                    minf=0.0,
                    outdir="logs",
                    log_freq=1,
-                   log_arch_freq=1000,
+                   log_arch_freq=500,
                    seed=None):
 
     # Create a directory for this specific trial.
@@ -619,7 +619,7 @@ def lunar_lander_main(algorithm,
                       minf=0.0,
                       outdir="logs",
                       log_freq=1,
-                      log_arch_freq=1000,
+                      log_arch_freq=500,
                       seed=None):
     """Experiment tool for the lunar_lander domain from the CMA-ME paper.
 
