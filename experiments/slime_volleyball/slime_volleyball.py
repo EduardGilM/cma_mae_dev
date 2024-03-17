@@ -20,6 +20,7 @@ import torch
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
+#  from pyinstrument import Profiler
 from torch import nn
 
 from ribs.archives import GridArchive
@@ -113,6 +114,9 @@ def simulate(model,
         trajectory (dict): Arrays representing (s, a, r, s', done) of both
             agents.
     """
+    #  profiler = Profiler()
+    #  profiler.start()
+
     if video_env is None:
         # Since we are using multiple processes, it is simpler if each worker
         # just creates their own copy of the environment instead of trying to
@@ -128,6 +132,7 @@ def simulate(model,
     torch.set_num_threads(1)
 
     policy = SlimeMLP(mlp.games['slimevolley']).deserialize(model).to("cpu")
+    policy.eval()
 
     total_reward = 0.0
     last_x = 0.0
@@ -157,52 +162,53 @@ def simulate(model,
     else:
         trajectory = None
 
-    timestep = 0
-    while not done:
-        old_obs_right = obs_right
-        old_obs_left = obs_left
+    with torch.inference_mode():
+        timestep = 0
+        while not done:
+            old_obs_right = obs_right
+            old_obs_left = obs_left
 
-        action_right, action_left = policy.action(obs_right), policy.action(
-            obs_left)
-        obs_right, reward, done, info = env.step(action_right, action_left)
-        obs_left = info['otherObs']
-        total_reward += reward
+            action_right, action_left = policy.action(obs_right), policy.action(
+                obs_left)
+            obs_right, reward, done, info = env.step(action_right, action_left)
+            obs_left = info['otherObs']
+            total_reward += reward
 
-        if record_traj:
-            trajectory["state"][2 * timestep] = old_obs_right
-            trajectory["action"][2 * timestep] = action_right
-            trajectory["reward"][2 * timestep] = reward
-            trajectory["next_state"][2 * timestep] = obs_right
-            trajectory["done"][2 * timestep] = done
+            if record_traj:
+                trajectory["state"][2 * timestep] = old_obs_right
+                trajectory["action"][2 * timestep] = action_right
+                trajectory["reward"][2 * timestep] = reward
+                trajectory["next_state"][2 * timestep] = obs_right
+                trajectory["done"][2 * timestep] = done
 
-            trajectory["state"][2 * timestep + 1] = old_obs_left
-            trajectory["action"][2 * timestep + 1] = action_left
-            trajectory["reward"][2 * timestep + 1] = -reward
-            trajectory["next_state"][2 * timestep + 1] = obs_left
-            trajectory["done"][2 * timestep + 1] = done
+                trajectory["state"][2 * timestep + 1] = old_obs_left
+                trajectory["action"][2 * timestep + 1] = action_left
+                trajectory["reward"][2 * timestep + 1] = -reward
+                trajectory["next_state"][2 * timestep + 1] = obs_left
+                trajectory["done"][2 * timestep + 1] = done
 
-        timestep += 1
+            timestep += 1
 
-        if not video_env is None:
-            if save_video_to is None:
-                # if has video_env and no save_video_to, generate video and play
-                env.render()
-            else:
-                # if has video_env and save_video_to, generate video and save
-                img = env.render("rgb_array")
-                if 'video' in vars():
-                    video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            if not video_env is None:
+                if save_video_to is None:
+                    # if has video_env and no save_video_to, generate video and play
+                    env.render()
                 else:
-                    video = cv2.VideoWriter(save_video_to,
-                                            cv2.VideoWriter_fourcc(*'mp4v'), 40,
-                                            img.shape[:2][::-1])
-                    video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                    # if has video_env and save_video_to, generate video and save
+                    img = env.render("rgb_array")
+                    if 'video' in vars():
+                        video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                    else:
+                        video = cv2.VideoWriter(save_video_to,
+                                                cv2.VideoWriter_fourcc(*'mp4v'),
+                                                40, img.shape[:2][::-1])
+                        video.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-        cur_x = env.game.ball.x - env.game.fence.x
-        if cur_x * last_x < 0:
-            #print('volley!')
-            num_volleys += 1
-        last_x = cur_x
+            cur_x = env.game.ball.x - env.game.fence.x
+            if cur_x * last_x < 0:
+                #print('volley!')
+                num_volleys += 1
+            last_x = cur_x
 
     num_hits = env.game.num_right_hits + env.game.num_left_hits
 
@@ -215,6 +221,9 @@ def simulate(model,
     best_obj = 5
     worst_obj = -5
     obj = (total_reward - worst_obj) / (best_obj - worst_obj) * 100
+
+    #  profiler.stop()
+    #  profiler.print()
 
     return obj, num_hits, num_volleys, trajectory
 
