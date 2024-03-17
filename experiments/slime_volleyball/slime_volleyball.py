@@ -168,6 +168,8 @@ def simulate(model,
             old_obs_right = obs_right
             old_obs_left = obs_left
 
+            # The PyTorch model tends to be a bottleneck, likely because it is
+            # not designed for single passes on a CPU.
             action_right, action_left = policy.action(obs_right), policy.action(
                 obs_left)
             obs_right, reward, done, info = env.step(action_right, action_left)
