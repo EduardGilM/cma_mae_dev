@@ -16,6 +16,7 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
@@ -23,10 +24,46 @@ from ribs.archives import GridArchive
 from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
                            ImprovementEmitter, IsoLineEmitter,
                            OptimizingEmitter)
-from ribs.emitters.dqn_emitter import DQNEmitter, LinearNetwork
+from ribs.emitters.dqn_emitter import DQNEmitter
 from ribs.emitters.replay_buffer import Experience, ReplayBuffer
 from ribs.optimizers import Optimizer
 from ribs.visualize import _retrieve_cmap, grid_archive_heatmap
+from torch import nn
+
+
+class LinearNetwork(nn.Module):
+
+    def __init__(self, action_dim, obs_dim):
+        super().__init__()
+        self.model = nn.Linear(obs_dim, action_dim, bias=False)
+
+    def forward(self, x):
+        return self.model(x)
+
+    def action(self, obs):
+        """Computes action for one observation."""
+        obs = torch.from_numpy(obs[None].astype(np.float32))
+        return self(obs)[0].argmax().cpu().detach().numpy()
+
+    def serialize(self):
+        """Returns 1D array with all parameters in the actor."""
+        return np.concatenate(
+            [p.data.cpu().detach().numpy().ravel() for p in self.parameters()])
+
+    def deserialize(self, array):
+        """Loads parameters from 1D array."""
+        array = np.copy(array)
+        arr_idx = 0
+        for param in self.model.parameters():
+            shape = tuple(param.data.shape)
+            length = np.product(shape)
+            block = array[arr_idx:arr_idx + length]
+            if len(block) != length:
+                raise ValueError("Array not long enough!")
+            block = np.reshape(block, shape)
+            arr_idx += length
+            param.data = torch.from_numpy(block).float()
+        return self
 
 
 def simulate(model, seed=None, video_env=None, save_video_to=None):
@@ -308,8 +345,7 @@ def create_optimizer(
                 batch_size=(num_emitters * batch_size) // 2,
                 replay_buffer=replay_buffer,
                 seed=emitter_seeds[1],
-                action_dim=action_dim,
-                obs_dim=obs_dim,
+                network_fn=lambda: LinearNetwork(action_dim, obs_dim),
                 args={
                     "batch_size": 128,
                     "train_itrs": 10,
@@ -822,5 +858,4 @@ if __name__ == '__main__':
     #     seed=14,
     #     outdir=None
     # )
-
     # collect_video_data()

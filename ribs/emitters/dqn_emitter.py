@@ -7,44 +7,9 @@ import torch.nn.functional as F
 from ribs.archives import ArchiveBase
 from ribs.emitters import EmitterBase
 from ribs.emitters.replay_buffer import ReplayBuffer
-from torch import nn, optim
+from torch import optim
 
 logger = logging.getLogger(__name__)
-
-
-class LinearNetwork(nn.Module):
-
-    def __init__(self, action_dim, obs_dim):
-        super().__init__()
-        self.model = nn.Linear(obs_dim, action_dim, bias=False)
-
-    def forward(self, x):
-        return self.model(x)
-
-    def action(self, obs):
-        """Computes action for one observation."""
-        obs = torch.from_numpy(obs[None].astype(np.float32))
-        return self(obs)[0].argmax().cpu().detach().numpy()
-
-    def serialize(self):
-        """Returns 1D array with all parameters in the actor."""
-        return np.concatenate(
-            [p.data.cpu().detach().numpy().ravel() for p in self.parameters()])
-
-    def deserialize(self, array):
-        """Loads parameters from 1D array."""
-        array = np.copy(array)
-        arr_idx = 0
-        for param in self.model.parameters():
-            shape = tuple(param.data.shape)
-            length = np.product(shape)
-            block = array[arr_idx:arr_idx + length]
-            if len(block) != length:
-                raise ValueError("Array not long enough!")
-            block = np.reshape(block, shape)
-            arr_idx += length
-            param.data = torch.from_numpy(block).float()
-        return self
 
 
 class DQNEmitter(EmitterBase):
@@ -58,8 +23,7 @@ class DQNEmitter(EmitterBase):
         batch_size: int,
         replay_buffer: ReplayBuffer,
         args: dict,
-        action_dim: int,
-        obs_dim: int,
+        network_fn,
         bounds=None,
         seed=None,
     ):
@@ -69,8 +33,7 @@ class DQNEmitter(EmitterBase):
         self._sigma0 = sigma0
         self._replay_buffer = replay_buffer
         self._args = args
-        self._action_dim = action_dim
-        self._obs_dim = obs_dim
+        self._network_fn = network_fn
 
         if bounds is not None:
             raise ValueError("Bounds not supported for this emitter")
@@ -108,10 +71,9 @@ class DQNEmitter(EmitterBase):
             sol = self.archive.get_random_elite()[0]
 
             # DQN training; adopted from cleanrl.
-            q_network = LinearNetwork(self._action_dim,
-                                      self._obs_dim).deserialize(sol).to(self._device)
-            target_network = LinearNetwork(self._action_dim,
-                                           self._obs_dim).deserialize(sol).to(self._device)
+            q_network = self._network_fn().deserialize(sol).to(self._device)
+            target_network = self._network_fn().deserialize(sol).to(
+                self._device)
             optimizer = optim.Adam(q_network.parameters(),
                                    lr=self._args["learning_rate"])
 
