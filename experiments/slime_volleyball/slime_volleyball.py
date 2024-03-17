@@ -4,6 +4,9 @@ Algorithms for the paper: cma_mae, cma_me, map_elites_line, map_elites, dqn_me
 
 Usage:
     python slime_volleyball.py [ALGORITHM]
+
+    # For CMA-MAE from the paper:
+    python slime_volleyball.py [ALGORITHM] --alpha=0.01
 """
 import copy
 import csv
@@ -250,7 +253,7 @@ def simulate_parallel(client, sols, seed, algorithm):
 def create_optimizer(algorithm,
                      dim,
                      replay_buffer,
-                     alpha=0.01,
+                     alpha=1.0,
                      resolution=100,
                      seed=None):
     """Creates an optimizer based on the algorithm name.
@@ -416,7 +419,7 @@ def run_experiment(algorithm,
                    trial_id,
                    total_trials,
                    client,
-                   alpha=0.01,
+                   alpha=1.0,
                    arch_res_exp=False,
                    resolution=100,
                    init_pop=100,
@@ -577,7 +580,7 @@ def slime_volleyball_main(algorithm,
                           workers=4,
                           trials=20,
                           arch_res_exp=False,
-                          alpha=0.01,
+                          alpha=1.0,
                           resolution=50,
                           init_pop=100,
                           itrs=2500,

@@ -4,6 +4,9 @@ Algorithms for the paper: cma_mae, cma_me, map_elites_line, map_elites, dqn_me
 
 Usage:
     python lunar_lander.py [ALGORITHM]
+
+    # For CMA-MAE from the paper:
+    python slime_volleyball.py [ALGORITHM] --alpha=0.1
 """
 import csv
 import os
@@ -213,7 +216,7 @@ def create_optimizer(
     replay_buffer,  # Can be None.
     action_dim,
     obs_dim,
-    alpha=0.1,
+    alpha=1.0,
     resolution=100,
     minf=0.0,
     seed=None,
@@ -389,7 +392,7 @@ def run_experiment(algorithm,
                    trial_id,
                    total_trials,
                    client,
-                   alpha=0.1,
+                   alpha=1.0,
                    arch_res_exp=False,
                    resolution=100,
                    init_pop=100,
@@ -555,7 +558,7 @@ def lunar_lander_main(algorithm,
                       workers=4,
                       trials=20,
                       arch_res_exp=False,
-                      alpha=0.1,
+                      alpha=1.0,
                       resolution=100,
                       init_pop=100,
                       itrs=2500,
