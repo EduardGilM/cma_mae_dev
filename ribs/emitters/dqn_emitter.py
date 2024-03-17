@@ -4,10 +4,11 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch import optim
+
 from ribs.archives import ArchiveBase
 from ribs.emitters import EmitterBase
 from ribs.emitters.replay_buffer import ReplayBuffer
-from torch import optim
 
 logger = logging.getLogger(__name__)
 

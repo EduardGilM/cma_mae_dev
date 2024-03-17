@@ -20,6 +20,8 @@ import torch
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
+from torch import nn
+
 from ribs.archives import GridArchive
 from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
                            ImprovementEmitter, IsoLineEmitter,
@@ -28,7 +30,6 @@ from ribs.emitters.dqn_emitter import DQNEmitter
 from ribs.emitters.replay_buffer import Experience, ReplayBuffer
 from ribs.optimizers import Optimizer
 from ribs.visualize import _retrieve_cmap, grid_archive_heatmap
-from torch import nn
 
 
 class LinearNetwork(nn.Module):
