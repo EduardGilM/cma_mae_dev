@@ -23,10 +23,9 @@ from matplotlib.patches import Ellipse, Rectangle
 from torch import nn
 
 from ribs.archives import GridArchive
-from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
+from ribs.emitters import (AnnealingEmitter, DQNEmitter, GaussianEmitter,
                            ImprovementEmitter, IsoLineEmitter,
                            OptimizingEmitter)
-from ribs.emitters.dqn_emitter import DQNEmitter
 from ribs.emitters.replay_buffer import Experience, ReplayBuffer
 from ribs.optimizers import Optimizer
 from ribs.visualize import _retrieve_cmap, grid_archive_heatmap

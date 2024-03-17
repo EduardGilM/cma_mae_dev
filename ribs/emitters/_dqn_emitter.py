@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import optim
 
 from ribs.archives import ArchiveBase
-from ribs.emitters import EmitterBase
+from ribs.emitters._emitter_base import EmitterBase
 from ribs.emitters.replay_buffer import ReplayBuffer
 
 logger = logging.getLogger(__name__)

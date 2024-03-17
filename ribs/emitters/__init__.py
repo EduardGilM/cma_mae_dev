@@ -10,6 +10,7 @@
     :toctree:
 
     ribs.emitters.AnnealingEmitter
+    ribs.emitters.DQNEmitter
     ribs.emitters.GaussianEmitter
     ribs.emitters.GradientEmitter
     ribs.emitters.GradientImprovementEmitter
@@ -20,11 +21,13 @@
     ribs.emitters.EmitterBase
 """
 from ribs.emitters._annealing_emitter import AnnealingEmitter
+from ribs.emitters._dqn_emitter import DQNEmitter
 from ribs.emitters._emitter_base import EmitterBase
 from ribs.emitters._gaussian_emitter import GaussianEmitter
-from ribs.emitters._gradient_emitter import GradientEmitter
 from ribs.emitters._gradient_annealing_emitter import GradientAnnealingEmitter
-from ribs.emitters._gradient_improvement_emitter import GradientImprovementEmitter
+from ribs.emitters._gradient_emitter import GradientEmitter
+from ribs.emitters._gradient_improvement_emitter import \
+    GradientImprovementEmitter
 from ribs.emitters._improvement_emitter import ImprovementEmitter
 from ribs.emitters._iso_line_emitter import IsoLineEmitter
 from ribs.emitters._optimizing_emitter import OptimizingEmitter
@@ -32,6 +35,7 @@ from ribs.emitters._random_direction_emitter import RandomDirectionEmitter
 
 __all__ = [
     "AnnealingEmitter",
+    "DQNEmitter",
     "GaussianEmitter",
     "GradientEmitter",
     "GradientImprovementEmitter",
