@@ -90,7 +90,11 @@ class DiscreteSlimeVolleyEnv(SlimeVolleyEnv):
     atari_mode = True
 
 
-def simulate(model, seed=None, video_env=None, save_video_to=None):
+def simulate(model,
+             seed=None,
+             video_env=None,
+             save_video_to=None,
+             record_traj=True):
     """Simulates the slime volleyball model.
 
     Args:
@@ -130,14 +134,28 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     obs_left = copy.deepcopy(obs_right)
     done = False
 
-    trajectory = {
-        "state": [],
-        "action": [],
-        "reward": [],
-        "next_state": [],
-        "done": [],
-    }
+    max_exp = env.t_limit * 2
+    if record_traj:
+        trajectory = {
+            "state":
+                np.full((max_exp, mlp.games["slimevolley"].input_size),
+                        np.nan,
+                        dtype=np.float32),
+            "action":
+                np.full((max_exp,), np.nan, dtype=np.float32),
+            "reward":
+                np.full((max_exp,), np.nan, dtype=np.float32),
+            "next_state":
+                np.full((max_exp, mlp.games["slimevolley"].input_size),
+                        np.nan,
+                        dtype=np.float32),
+            "done":
+                np.full((max_exp,), np.nan, dtype=np.float32),
+        }
+    else:
+        trajectory = None
 
+    timestep = 0
     while not done:
         old_obs_right = obs_right
         old_obs_left = obs_left
@@ -148,17 +166,20 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
         obs_left = info['otherObs']
         total_reward += reward
 
-        trajectory["state"].append(old_obs_right)
-        trajectory["action"].append(action_right)
-        trajectory["reward"].append(reward)
-        trajectory["next_state"].append(obs_right)
-        trajectory["done"].append(done)
+        if record_traj:
+            trajectory["state"][2 * timestep] = old_obs_right
+            trajectory["action"][2 * timestep] = action_right
+            trajectory["reward"][2 * timestep] = reward
+            trajectory["next_state"][2 * timestep] = obs_right
+            trajectory["done"][2 * timestep] = done
 
-        trajectory["state"].append(old_obs_left)
-        trajectory["action"].append(action_left)
-        trajectory["reward"].append(-reward)
-        trajectory["next_state"].append(obs_left)
-        trajectory["done"].append(done)
+            trajectory["state"][2 * timestep + 1] = old_obs_left
+            trajectory["action"][2 * timestep + 1] = action_left
+            trajectory["reward"][2 * timestep + 1] = -reward
+            trajectory["next_state"][2 * timestep + 1] = obs_left
+            trajectory["done"][2 * timestep + 1] = done
+
+        timestep += 1
 
         if not video_env is None:
             if save_video_to is None:
@@ -196,8 +217,10 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     return obj, num_hits, num_volleys, trajectory
 
 
-def simulate_parallel(client, sols, seed):
-    futures = client.map(lambda model: simulate(model, seed), sols)
+def simulate_parallel(client, sols, seed, algorithm):
+    futures = client.map(
+        lambda model: simulate(model, seed, record_traj=algorithm == "dqn_me"),
+        sols)
     results = client.gather(futures)
 
     objs, meas, trajectories = [], [], []
@@ -442,7 +465,7 @@ def run_experiment(algorithm,
     if algorithm == "dqn_me":
         replay_buffer = ReplayBuffer(
             capacity=1_000_000,
-            obs_shape=mlp.games['slimevolley'].input_size,
+            obs_shape=(mlp.games['slimevolley'].input_size,),
             action_shape=(1,),
         )
     else:
@@ -467,7 +490,8 @@ def run_experiment(algorithm,
             sols = np.array(
                 [np.random.normal(size=dim) for _ in range(init_pop)])
 
-            objs, measures, trajectories = simulate_parallel(client, sols, seed)
+            objs, measures, trajectories = simulate_parallel(
+                client, sols, seed, algorithm)
             best = max(best, max(objs))
 
             # Add each solution to the archive.
@@ -479,7 +503,8 @@ def run_experiment(algorithm,
             itr_start = time.time()
 
             sols = optimizer.ask()
-            objs, measures, trajectories = simulate_parallel(client, sols, seed)
+            objs, measures, trajectories = simulate_parallel(
+                client, sols, seed, algorithm)
             best = max(best, max(objs))
             optimizer.tell(objs, measures)
 
@@ -487,6 +512,8 @@ def run_experiment(algorithm,
             if algorithm == "dqn_me":
                 for trajectory in trajectories:
                     for i in range(len(trajectory["reward"])):
+                        if np.isnan(trajectory["reward"][i]):
+                            break
                         replay_buffer.add(
                             Experience(trajectory["state"][i],
                                        trajectory["action"][i],
