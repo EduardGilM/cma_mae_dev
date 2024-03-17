@@ -15,10 +15,11 @@ conda env create -f experiments/environment.yml
 
 ```
 
-Next activate the conda environment and install pyribs:
+Next activate the conda environment and install slimevolleygym and pyribs:
 
 ```bash
 conda activate cma_mae_exps
+pip3 install -e slimevolleygym
 pip3 install -e .[all]
 ```
 
