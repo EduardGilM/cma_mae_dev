@@ -43,7 +43,7 @@ class LinearNetwork(nn.Module):
     def action(self, obs):
         """Computes action for one observation."""
         obs = torch.from_numpy(obs[None].astype(np.float32))
-        return self(obs)[0].argmax().cpu().detach().numpy()
+        return self(obs)[0].argmax().item()
 
     def serialize(self):
         """Returns 1D array with all parameters in the actor."""
