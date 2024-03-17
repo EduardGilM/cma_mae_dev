@@ -121,11 +121,18 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
             np.full((episode_length,), np.nan, dtype=np.float32),
     }
 
-    pt_model = LinearNetwork(action_dim, obs_dim).deserialize(model).to("cpu")
+    # Turns out that evaluating the model with Numpy is faster, probably because
+    # PyTorch is not optimized for single-threaded CPU use.
+    #
+    #  pt_model = LinearNetwork(action_dim, obs_dim).deserialize(model).to("cpu")
+    #  pt_model.eval()
+    model = model.reshape((action_dim, obs_dim))
 
     timestep = 0
+    #  with torch.no_grad():
     while not done:
-        action = pt_model.action(obs)  # Linear policy.
+        #  action = pt_model.action(obs)  # Linear policy.
+        action = np.argmax(model @ obs)
 
         old_obs = obs
         obs, reward, terminated, truncated, _ = env.step(action)
