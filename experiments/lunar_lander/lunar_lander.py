@@ -95,6 +95,8 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     else:
         env = video_env
 
+    torch.set_num_threads(1)
+
     action_dim = env.action_space.n
     obs_dim = env.observation_space.shape[0]
     episode_length = env.spec.max_episode_steps
