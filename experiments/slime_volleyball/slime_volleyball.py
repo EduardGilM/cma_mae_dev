@@ -23,7 +23,6 @@ import torch
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
-#  from pyinstrument import Profiler
 from torch import nn
 
 from ribs.archives import GridArchive
@@ -117,9 +116,6 @@ def simulate(model,
         trajectory (dict): Arrays representing (s, a, r, s', done) of both
             agents.
     """
-    #  profiler = Profiler()
-    #  profiler.start()
-
     if video_env is None:
         # Since we are using multiple processes, it is simpler if each worker
         # just creates their own copy of the environment instead of trying to
@@ -226,9 +222,6 @@ def simulate(model,
     best_obj = 5
     worst_obj = -5
     obj = (total_reward - worst_obj) / (best_obj - worst_obj) * 100
-
-    #  profiler.stop()
-    #  profiler.print()
 
     return obj, num_hits, num_volleys, trajectory
 
