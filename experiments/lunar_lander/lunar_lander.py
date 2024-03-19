@@ -556,7 +556,7 @@ def run_experiment(algorithm,
 
 def lunar_lander_main(algorithm,
                       workers=4,
-                      trials=20,
+                      trials=5,
                       arch_res_exp=False,
                       alpha=1.0,
                       resolution=100,
