@@ -279,7 +279,7 @@ The following tables contain the reported results from the paper and commands to
 | MAP-Elites                    | 62.11       | 99.93%     | `python3 lunar_lander.py map_elites`          |
 | MAP-Elites (line)             | 62.75       | 99.97%     | `python3 lunar_lander.py map_elites_line`     |
 | CMA-ME                        | 58.19       | 99.23%     | `python3 lunar_lander.py cma_me`              |
-| CMA-MAE                       | 64.99       | 99.94%     | `python3 lunar_lander.py cma_mae --alpha 0.01`|
+| CMA-MAE                       | 64.99       | 99.94%     | `python3 lunar_lander.py cma_mae --alpha 0.1` |
 
 ### Slime Volleyball
 
