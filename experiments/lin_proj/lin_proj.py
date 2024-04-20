@@ -282,6 +282,7 @@ def run_experiment(algorithm,
                    outdir="logs",
                    log_freq=1,
                    log_arch_freq=1000,
+                   record_numoverwrites=False,
                    seed=None):
     
     # Create a directory for this specific trial.
@@ -299,7 +300,10 @@ def run_experiment(algorithm,
         os.remove(summary_filename)
     with open(summary_filename, 'w') as summary_file:
         writer = csv.writer(summary_file)
-        writer.writerow(['Iteration', 'QD-Score', 'Coverage', 'Maximum', 'Average'])
+        if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+            writer.writerow(['Iteration', 'QD-Score', 'Coverage', 'Maximum', 'Average', 'NumOverwrites'])
+        else:
+            writer.writerow(['Iteration', 'QD-Score', 'Coverage', 'Maximum', 'Average'])
    
     # If we are running a resolution experiment, override the resolution.
     if arch_res_exp:
@@ -372,21 +376,35 @@ def run_experiment(algorithm,
                 measures, jacobian_measure = calc_measures(sols)
                 jacobian_obj = np.expand_dims(jacobian_obj, axis=1)
                 jacobian = np.concatenate((jacobian_obj, jacobian_measure), axis=1)
-                optimizer.tell(objs, measures, jacobian=jacobian)
-
+                if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+                    ranking_data = optimizer.tell(objs, measures, jacobian=jacobian)
+                    ranking_data = np.array(ranking_data)
+                else:
+                    optimizer.tell(objs, measures, jacobian=jacobian)
+                
                 # Update the passive elitist archive.
                 for i in range(len(sols)):
                     passive_archive.add(sols[i], objs[i], measures[i])
+                
+                if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+                    numoverwrites = np.sum(ranking_data[:,2])
 
             sols = optimizer.ask()
             objs, _ = obj_func(sols)
             best = max(best, max(objs))
             measures, _ = calc_measures(sols)
-            optimizer.tell(objs, measures)
+            if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+                ranking_data = optimizer.tell(objs, measures)
+                ranking_data = np.array(ranking_data)
+            else:
+                optimizer.tell(objs, measures)
 
             # Update the passive elitist archive.
             for i in range(len(sols)):
                 passive_archive.add(sols[i], objs[i], measures[i])
+                
+            if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+                numoverwrites = np.sum(ranking_data[:,2])
 
             non_logging_time += time.time() - itr_start
             progress()
@@ -417,12 +435,15 @@ def run_experiment(algorithm,
                     qd_score = sum_obj / num_bins
                     average = sum_obj / num_filled
                     coverage = 100.0 * num_filled / num_bins
-                    data = [itr, qd_score, coverage, best, average]
+                    if record_numoverwrites and algorithm in ["cma_mae", "cma_maega"]:
+                        data = [itr, qd_score, coverage, best, average, numoverwrites]
+                    else:
+                        data = [itr, qd_score, coverage, best, average]
                     writer.writerow(data)
 
 
 def lin_proj_main(algorithm,
-                  trials=20,
+                  trials=1,
                   parallel=True,
                   arch_res_exp=False,
                   dim=100,
@@ -430,7 +451,7 @@ def lin_proj_main(algorithm,
                   resolution=100,
                   objective='sphere',
                   init_pop=100,
-                  itrs=10000,
+                  itrs=100000,
                   outdir="logs",
                   log_freq=1,
                   log_arch_freq=1000,
@@ -487,6 +508,7 @@ def lin_proj_main(algorithm,
             outdir=outdir,
             log_freq=log_freq,
             log_arch_freq=log_arch_freq,
+            record_numoverwrites=True,
             seed=seed,
         )
 

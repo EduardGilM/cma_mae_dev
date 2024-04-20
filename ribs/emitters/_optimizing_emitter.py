@@ -150,7 +150,7 @@ class OptimizingEmitter(EmitterBase):
         metadata = itertools.repeat(None) if metadata is None else metadata
         for i, (sol, obj, beh, meta) in enumerate(
                 zip(solutions, objective_values, behavior_values, metadata)):
-            status, _ = self.archive.add(sol, obj, beh, meta)
+            status, _, _ = self.archive.add(sol, obj, beh, meta)
             added = bool(status)
             ranking_data.append((added, obj, i))
             if added:

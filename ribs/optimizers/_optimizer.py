@@ -147,15 +147,19 @@ class Optimizer:
 
         # Limit OpenBLAS to single thread. This is typically faster than
         # multithreading because our data is too small.
+        ranking_data = []
         with threadpool_limits(limits=1, user_api="blas"):
             # Keep track of pos because emitters may have different batch sizes.
             pos = 0
             for emitter, n in zip(self._emitters, self._num_emitted):
                 end = pos + n
                 em_jacobian = None if jacobian is None else jacobian[pos:end]
-                emitter.tell(self._solutions[pos:end],
+                em_ranking_data = emitter.tell(self._solutions[pos:end],
                              objective_values[pos:end],
                              behavior_values[pos:end], 
                              em_jacobian,
                              metadata[pos:end])
+                ranking_data += em_ranking_data
                 pos = end
+
+        return ranking_data

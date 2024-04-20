@@ -288,6 +288,8 @@ class ArchiveBase(ABC):  # pylint: disable = too-many-instance-attributes
                 item at the index.
             old_threshold (float): What was the threshold value for this cell
                 before updating the archive.
+            discarded_elite (bool): Whether a better elite was discarded during this
+                addition. This happens when old_thresh < new_objective_value < old_objective_value.
         """
         already_occupied = occupied[new_index]
         if not already_occupied:
@@ -311,13 +313,14 @@ class ArchiveBase(ABC):  # pylint: disable = too-many-instance-attributes
                 threshold_values[new_index] = new_thresh
             
             # Insert into the archive.
+            discarded_elite = (new_objective_value < objective_values[new_index])
             objective_values[new_index] = new_objective_value
             behavior_values[new_index] = new_behavior_values
             solutions[new_index] = new_solution
 
-            return True, already_occupied, old_thresh
+            return True, already_occupied, old_thresh, discarded_elite
 
-        return False, already_occupied, old_thresh
+        return False, already_occupied, old_thresh, False
 
     def _add_occupied_index(self, index):
         """Adds a new index to the lists of occupied indices."""
@@ -348,7 +351,7 @@ class ArchiveBase(ABC):  # pylint: disable = too-many-instance-attributes
                 solution. For instance, this could be a dict with several
                 properties.
         Returns:
-            tuple: 2-element tuple describing the result of the add operation.
+            tuple: 3-element tuple describing the result of the add operation.
             These outputs are particularly useful for algorithms such as CMA-ME.
 
                 **status** (:class:`AddStatus`): See :class:`AddStatus`.
@@ -365,12 +368,16 @@ class ArchiveBase(ABC):  # pylint: disable = too-many-instance-attributes
                   value of solution passed in minus objective value of solution
                   previously in the archive
                 - ``NEW`` -> the objective value passed in
+
+                **discarded_elite** (bool): This is True when the added solution replaces
+                a predecessor with higher objective value. Specifically, this happens when 
+                old_thresh < new_objective_value < old_objective_value.
         """
         solution = np.asarray(solution)
         behavior_values = np.asarray(behavior_values)
 
         index = self.get_index(behavior_values)
-        was_inserted, already_occupied, old_threshold = self._add_numba(
+        was_inserted, already_occupied, old_threshold, discarded_elite = self._add_numba(
             index, solution, objective_value, behavior_values, self._occupied,
             self._solutions, self._objective_values, self._threshold_values,
             self._archive_learning_rate, self._threshold_floor, self._behavior_values)
@@ -386,7 +393,7 @@ class ArchiveBase(ABC):  # pylint: disable = too-many-instance-attributes
         else:
             status = AddStatus.NOT_ADDED
         value = objective_value - old_threshold
-        return status, self.dtype(value)
+        return status, self.dtype(value), discarded_elite
 
     @require_init
     def elite_with_behavior(self, behavior_values):

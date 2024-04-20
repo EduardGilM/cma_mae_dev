@@ -146,22 +146,25 @@ class AnnealingEmitter(EmitterBase):
         metadata = itertools.repeat(None) if metadata is None else metadata
         for i, (sol, obj, beh, meta) in enumerate(
                 zip(solutions, objective_values, behavior_values, metadata)):
-            status, value = self.archive.add(sol, obj, beh, meta)
-            ranking_data.append((value, i))
+            status, value, discarded_elite = self.archive.add(sol, obj, beh, meta)
+            ranking_data.append((value, i, discarded_elite))
             if status in (AddStatus.NEW, AddStatus.IMPROVE_EXISTING):
                 new_sols += 1
 
         # Sort by improvement
-        ranking_data.sort(reverse=True)
+        #   do not consider discarded_elite when sorting
+        ranking_data.sort(reverse=True, key=lambda r: (r[0], r[1]))
         indices = [d[1] for d in ranking_data]
 
         self.opt.tell(solutions[indices], self._num_parents)
 
         # Check for reset.
         self._restart_timer += 1
-        if (self.opt.check_stop([value for value, i in ranking_data]) or
+        if (self.opt.check_stop([value for value, i, _ in ranking_data]) or
                 self._check_restart(new_sols)):
             new_x0 = self.archive.get_random_elite()[0]
             self.opt.reset(new_x0)
             self._restarts += 1
             self._restart_timer = 0
+
+        return ranking_data

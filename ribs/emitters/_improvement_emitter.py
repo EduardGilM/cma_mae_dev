@@ -153,7 +153,7 @@ class ImprovementEmitter(EmitterBase):
         metadata = itertools.repeat(None) if metadata is None else metadata
         for i, (sol, obj, beh, meta) in enumerate(
                 zip(solutions, objective_values, behavior_values, metadata)):
-            status, value = self.archive.add(sol, obj, beh, meta)
+            status, value, _ = self.archive.add(sol, obj, beh, meta)
             ranking_data.append((status, value, i))
             if status in (AddStatus.NEW, AddStatus.IMPROVE_EXISTING):
                 new_sols += 1
