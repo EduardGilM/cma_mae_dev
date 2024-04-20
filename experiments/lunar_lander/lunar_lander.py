@@ -633,16 +633,16 @@ def lunar_lander_main(algorithm,
 
 
 def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
-    '''
-    max_mea is a list containing a boolean for each measure dimension.
-        if a boolean is True, play_policy will demonstrate a high fitness policy
-        with a relatively high value for this measure; if False it will prefer
-        a low value for this measure.
-    qcut_quantile is list containing an integer qcut quantile for each measure
-        dimension. The corresponding measure will be divided into qcut_quantile bins
-        for later ranking. This param is for balancing between the fineness when choosing
-        each measure. For example, when qcut_quantile=[1,1], play_policy will simply choose
-        the highest fitness.
+    '''Plays the best policy with certain measure preferences.
+
+    Args:
+        max_mea ([bool, bool]): Contains a boolean for each measure dimension.
+            If a boolean is True, policy sorting will prefer high value for its
+            corresponding measure; otherwise will prefer low value.
+        qcut_quantile ([int, int]): Contains a positive int for each measure dimension.
+            Each corresponding measure will be divided into int bins. All measure values
+            within the same bin will be considered equivalent during sorting. For example, 
+            when qcut_quantile=[1,1], play_policy will simply choose the highest fitness.
     '''
     df = pd.read_pickle(archive_path)
 
@@ -795,8 +795,90 @@ def collect_video_data():
         play_policy(**param)
 
 
+def show_interactive_archive(archive_path, seed):
+    '''Displays an interactive heatmap of the pickled archive at archive_path.
+        Left click on the heatmap to play a policy with the corresponding measures.
+
+    Args:
+        archive_path (str): Path to the archive pickle to be displayed.
+        seed (int): Seed for the algorithm.
+    
+    Note:
+        measure_0(impact_x_pos) assumed to be in range [-1.0, 1.0]
+        measure_1(impact_y_vel) assumed to be in range [-3.0, 0.0]
+        archive resolution assumed to be 100x100. 
+        objective score assumed to be in range [-600, 350]
+            - empirically determined according to worst/best obj observed during training
+            - used for mapping objective score to [0, 100]
+        Change these values below if needed.
+    '''
+    df = pd.read_pickle(archive_path)
+
+    fig = plt.figure(figsize=(8, 6))
+    cmap = _retrieve_cmap('viridis')
+
+    # Change archive resolution and measure bounds here if needed.
+    lower_mea_bounds = (-1.0, -3.0)
+    upper_mea_bounds = (1.0, 0.0)
+    x_dim, y_dim = (100, 100)
+    x_bounds = np.linspace(lower_mea_bounds[0], upper_mea_bounds[0], x_dim + 1)
+    y_bounds = np.linspace(lower_mea_bounds[1], upper_mea_bounds[1], y_dim + 1)
+
+    colors = np.full((y_dim, x_dim), np.nan)
+    for row in df.itertuples():
+        colors[row.index_1, row.index_0] = row.objective
+
+    ax = plt.gca()
+    ax.set_xlim(lower_mea_bounds[0], upper_mea_bounds[0])
+    ax.set_ylim(lower_mea_bounds[1], upper_mea_bounds[1])
+    plt.xlabel('impact position')
+    plt.ylabel('impact velocity')
+
+    pcm_kwargs = {}
+    vmin = 0
+    vmax = 100
+    t = ax.pcolormesh(x_bounds,
+                      y_bounds,
+                      colors,
+                      cmap=cmap,
+                      vmin=vmin,
+                      vmax=vmax,
+                      **pcm_kwargs)
+
+    ax.figure.colorbar(t, ax=ax, pad=0.1)
+
+    plt.tight_layout()
+
+    def onclick(event):
+        i0, i1 = np.digitize(event.xdata, x_bounds), np.digitize(event.ydata, y_bounds)
+
+        matching_row = df.loc[(df.index_0 == i0) & (df.index_1 == i1)]
+        model = matching_row.loc[:, df.columns.str.startswith('solution')].to_numpy().squeeze()
+
+        # Change objective bounds here if needed.
+        best_obj = 350
+        worst_obj = -600
+        restored_obj = matching_row.objective.iloc[0] / 100 * (best_obj - worst_obj) + worst_obj
+        print(
+            f" behavior_0(impact_x_pos):{matching_row.behavior_0.iloc[0]} \n behavior_1(impact_y_vel):{matching_row.behavior_1.iloc[0]} \n objective:{restored_obj}"
+        )
+
+        env = gym.make("LunarLander-v2", render_mode="human")
+        simulate(model, seed=seed, video_env=env, save_video_to=None)
+        env.close()
+
+    fig.canvas.mpl_connect('button_press_event', onclick)
+    plt.show()
+
+
 if __name__ == '__main__':
+    # Uncomment this line to train cma_mae
+    #   To make later visualizations consistent with training, random seed may be set to 14.
     fire.Fire(lunar_lander_main)
+
+    # Uncomment this line to show an interactive heatmap of the trained archive
+    #   left click on the heatmap to play a policy with the corresponding measures
+    # show_interactive_archive("logs/cma_mae_100_0.1_0.0/trial_0/archive_00002500.pkl", 14)
 
     # play_policy(
     #     "logs/cma_mae_100_0.1/trial_0/archive_00002500.pkl",
