@@ -105,8 +105,8 @@ class DQNEmitter(EmitterBase):
                             (1.0 - self._args["tau"]) *
                             target_network_param.data)
 
-                # Add new solution.
-                dqn_solutions.append(q_network.serialize())
+            # Add new solution.
+            dqn_solutions.append(q_network.serialize())
 
         logger.info("Solutions with DQN variation: %d", len(dqn_solutions))
         return dqn_solutions
