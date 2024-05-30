@@ -115,7 +115,11 @@ class Optimizer:
         self._solutions = np.concatenate(self._solutions, axis=0)
         return self._solutions
 
-    def tell(self, objective_values, behavior_values, jacobian=None, metadata=None):
+    def tell(self,
+             objective_values,
+             behavior_values,
+             jacobian=None,
+             metadata=None):
         """Returns info for solutions from :meth:`ask`.
 
         .. note:: The objective values, behavior values, and metadata must be in
@@ -155,11 +159,11 @@ class Optimizer:
                 end = pos + n
                 em_jacobian = None if jacobian is None else jacobian[pos:end]
                 em_ranking_data = emitter.tell(self._solutions[pos:end],
-                             objective_values[pos:end],
-                             behavior_values[pos:end], 
-                             em_jacobian,
-                             metadata[pos:end])
-                ranking_data += em_ranking_data
+                                               objective_values[pos:end],
+                                               behavior_values[pos:end],
+                                               em_jacobian, metadata[pos:end])
+                if em_ranking_data is not None:
+                    ranking_data += em_ranking_data
                 pos = end
 
         return ranking_data
