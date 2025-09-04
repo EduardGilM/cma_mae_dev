@@ -8,6 +8,8 @@ import fire
 import matplotlib.pyplot as plt
 import numpy as np
 from alive_progress import alive_bar
+from scipy.special import digamma
+from sklearn.neighbors import NearestNeighbors
 
 from dask.distributed import Client, LocalCluster
 
@@ -19,6 +21,88 @@ from ribs.emitters import (AnnealingEmitter, GaussianEmitter,
                            GradientImprovementEmitter)
 from ribs.optimizers import Optimizer
 from ribs.visualize import grid_archive_heatmap
+
+def kozachenko_leonenko_entropy(data, k=1):
+    n_samples, n_dimensions = data.shape
+    if n_samples <= 1:
+        return 0.0
+
+    nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='kd_tree').fit(data)
+    distances, _ = nbrs.kneighbors(data)
+    epsilon = distances[:, k]
+    entropy = digamma(n_samples) - digamma(k) + n_dimensions * np.mean(np.log(epsilon + 1e-10))
+    return entropy
+
+def kraskov_entropy(data, k=1):
+    n_samples, n_dimensions = data.shape
+    if n_samples <= 1:
+        return 0.0
+
+    nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='kd_tree').fit(data)
+    distances, _ = nbrs.kneighbors(data)
+    epsilon = distances[:, k]
+
+    entropy = (digamma(n_samples) - digamma(k) + n_dimensions * np.mean(np.log(2 * epsilon + 1e-10)))
+    return entropy
+
+def o_information(data, k=1, entropy_estimator=kozachenko_leonenko_entropy):
+    n_samples, n_vars = data.shape
+
+    h_joint = entropy_estimator(data, k)
+
+    sum_term = 0.0
+    for j in range(n_vars):
+        h_xj = entropy_estimator(data[:, j].reshape(-1, 1), k)
+
+        nData = data
+        data_excl_j = np.delete(nData, j, axis=1)
+        h_excl_j = entropy_estimator(data_excl_j, k)
+
+        sum_term += h_xj - h_excl_j
+
+    o = (n_vars - 2) * h_joint + sum_term
+    return o
+
+def lz76_complexity(sequence):
+    """Compute Lempel-Ziv 76 complexity of a sequence."""
+    if len(sequence) == 0:
+        return 0
+    
+    # Convert to binary string (simple thresholding at median)
+    median_val = np.median(sequence)
+    binary_seq = ''.join('1' if x > median_val else '0' for x in sequence)
+    
+    # Lempel-Ziv complexity calculation
+    n = len(binary_seq)
+    c = 1
+    l = 1
+    i = 0
+    k = 1
+    k_max = 1
+    stop = False
+    
+    while stop == False:
+        if binary_seq[i + k - 1] == binary_seq[l + k - 1]:
+            k = k + 1
+            if l + k > n:
+                c = c + 1
+                stop = True
+        else:
+            if k > k_max:
+                k_max = k
+            i = i + 1
+            if i == l:
+                c = c + 1
+                l = l + k_max
+                if l + 1 > n:
+                    stop = True
+                else:
+                    i = 0
+                    k = 1
+                    k_max = 1
+            else:
+                k = 1
+    return c
 
 def evaluate_grasp(joint_angles, link_lengths, calc_jacobians=True):
     
@@ -35,13 +119,19 @@ def evaluate_grasp(joint_angles, link_lengths, calc_jacobians=True):
     # l_1 * sin(theta_1), l_2 * sin(theta_1 + theta_2), ...
     y_pos = link_lengths[None] * np.sin(cum_theta)
 
-    measures = np.concatenate(
-        (
-            np.sum(x_pos, axis=1, keepdims=True),
-            np.sum(y_pos, axis=1, keepdims=True),
-        ),
-        axis=1,
-    )
+    # Compute O-Information and LZ76 for each solution
+    measures = []
+    for i in range(len(joint_angles)):
+        # O-Information for this solution
+        sol_data = joint_angles[i:i+1]  # shape (1, n_dim)
+        oi = o_information(sol_data, k=1)
+        
+        # LZ76 complexity for this solution
+        lz = lz76_complexity(joint_angles[i])
+        
+        measures.append([oi, lz])
+    
+    measures = np.array(measures)
     
     obj_derivatives = None
     measure_derivatives = None
@@ -53,16 +143,9 @@ def evaluate_grasp(joint_angles, link_lengths, calc_jacobians=True):
         base = n_dim * np.ones(n_dim)
         obj_derivatives = -2 * (joint_angles - means) / base
     
-        sum_0 = np.zeros(len(joint_angles)) 
-        sum_1 = np.zeros(len(joint_angles)) 
-
+        # For O-Information and LZ76, derivatives are complex to compute
+        # Set to zeros for now
         measure_derivatives = np.zeros((len(joint_angles), 2, n_dim))
-        for i in range(n_dim-1, -1, -1):
-            sum_0 += -link_lengths[i] * np.sin(cum_theta[:, i])
-            sum_1 += link_lengths[i] * np.cos(cum_theta[:, i])
-            
-            measure_derivatives[:, 0, i] = sum_0
-            measure_derivatives[:, 1, i] = sum_1
 
     return objs, obj_derivatives, measures, measure_derivatives
 
@@ -81,7 +164,8 @@ def create_optimizer(algorithm, dim, link_lengths,
         Optimizer: A ribs Optimizer for running the algorithm.
     """
     max_bound = np.sum(link_lengths)
-    bounds = [(-max_bound, max_bound), (-max_bound, max_bound)]
+    # Bounds for O-Information and LZ76
+    bounds = [(-50.0, 50.0), (0.0, float(dim * 2))]
     initial_sol = np.zeros(dim)
     batch_size = 36
     num_emitters = 15

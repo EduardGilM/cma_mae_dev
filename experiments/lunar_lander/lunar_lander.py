@@ -23,6 +23,8 @@ import torch
 from alive_progress import alive_bar
 from dask.distributed import Client, LocalCluster
 from matplotlib.patches import Ellipse, Rectangle
+from scipy.special import digamma
+from sklearn.neighbors import NearestNeighbors
 from torch import nn
 
 from ribs.archives import GridArchive
@@ -69,6 +71,88 @@ class LinearNetwork(nn.Module):
         return self
 
 
+def kozachenko_leonenko_entropy(data, k=1):
+    n_samples, n_dimensions = data.shape
+    if n_samples <= 1:
+        return 0.0
+
+    nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='kd_tree').fit(data)
+    distances, _ = nbrs.kneighbors(data)
+    epsilon = distances[:, k]
+    entropy = digamma(n_samples) - digamma(k) + n_dimensions * np.mean(np.log(epsilon + 1e-10))
+    return entropy
+
+def o_information(data, k=1, entropy_estimator=kozachenko_leonenko_entropy):
+    n_samples, n_vars = data.shape
+
+    h_joint = entropy_estimator(data, k)
+
+    sum_term = 0.0
+    for j in range(n_vars):
+        h_xj = entropy_estimator(data[:, j].reshape(-1, 1), k)
+
+        nData = data
+        data_excl_j = np.delete(nData, j, axis=1)
+        h_excl_j = entropy_estimator(data_excl_j, k)
+
+        sum_term += h_xj - h_excl_j
+
+    o = (n_vars - 2) * h_joint + sum_term
+    return o
+
+def lz76_complexity(sequence):
+    """Compute Lempel-Ziv 76 complexity of a sequence."""
+    if len(sequence) <= 1:
+        return 0
+    
+    # Normalize the sequence to [0, 1] range for better binarization
+    seq_min, seq_max = np.min(sequence), np.max(sequence)
+    if seq_max == seq_min:
+        # All values are the same, return minimal complexity
+        return 1
+    
+    normalized_seq = (sequence - seq_min) / (seq_max - seq_min)
+    
+    # Convert to binary string using 0.5 threshold
+    binary_seq = ''.join('1' if x >= 0.5 else '0' for x in normalized_seq)
+    
+    # Lempel-Ziv complexity calculation
+    n = len(binary_seq)
+    c = 1
+    l = 1
+    i = 0
+    k = 1
+    k_max = 1
+    stop = False
+    
+    while not stop:
+        if i + k > n:
+            c += 1
+            stop = True
+        elif binary_seq[i + k - 1] == binary_seq[l + k - 1]:
+            k += 1
+            if l + k > n:
+                c += 1
+                stop = True
+        else:
+            if k > k_max:
+                k_max = k
+            i += 1
+            if i == l:
+                c += 1
+                l += k_max
+                if l + 1 > n:
+                    stop = True
+                else:
+                    i = 0
+                    k = 1
+                    k_max = 1
+            else:
+                k = 1
+    
+    return c
+
+
 def simulate(model, seed=None, video_env=None, save_video_to=None):
     """Simulates the lunar lander model.
 
@@ -83,10 +167,8 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     Returns:
         obj (float): The reward accrued by the lander throughout its
             trajectory.
-        impact_x_pos (float): The x position of the lander when it touches the
-            ground for the first time.
-        impact_y_vel (float): The y velocity of the lander when it touches the
-            ground for the first time.
+        o_info (float): The O-Information computed from the state trajectory.
+        lz76 (float): The Lempel-Ziv 76 complexity of the x-position sequence.
         trajectory (dict): Arrays representing (s, a, r, s', done) of the agent.
     """
     if video_env is None:
@@ -123,6 +205,8 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
         "done":
             np.full((episode_length,), np.nan, dtype=np.float32),
     }
+
+    timestep = 0
 
     # Turns out that evaluating the model with Numpy is faster, probably because
     # PyTorch is not optimized for single-threaded CPU use.
@@ -174,12 +258,50 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
 
         timestep += 1
 
+    # Save the final state if episode ended
+    if done and timestep < episode_length:
+        trajectory['state'][timestep] = obs
+        trajectory['action'][timestep] = np.nan
+        trajectory['reward'][timestep] = np.nan
+        trajectory['next_state'][timestep] = np.full(obs_dim, np.nan)
+        trajectory['done'][timestep] = True
+
     # If the lunar lander did not land, set the x-pos to the one from the final
     # timestep, and set the y-vel to the max y-vel (we use min since the lander
     # goes down).
     if impact_x_pos is None:
         impact_x_pos = x_pos
         impact_y_vel = min(all_y_vels)
+
+    # Compute O-Information and LZ76 from the trajectory
+    # Get valid trajectory data (remove NaN values)
+    valid_mask = ~np.isnan(trajectory['state'][:, 0])
+    valid_states = trajectory['state'][valid_mask]
+    valid_actions = trajectory['action'][valid_mask]
+    valid_rewards = trajectory['reward'][valid_mask]
+    
+    if len(valid_states) > 1:
+        # Create multivariate data for O-Information: states + actions + rewards
+        multivariate_data = np.column_stack([
+            valid_states,  # 8 state variables
+            valid_actions.reshape(-1, 1),  # 1 action variable
+            valid_rewards.reshape(-1, 1)   # 1 reward variable
+        ])
+        
+        # Compute O-Information on the multivariate trajectory data
+        o_info = o_information(multivariate_data, k=1)
+        
+        # Compute LZ76 on a concatenated sequence of all variables
+        # Flatten all trajectory data into a single sequence
+        all_trajectory_data = np.concatenate([
+            valid_states.flatten(),
+            valid_actions,
+            valid_rewards
+        ])
+        lz76 = lz76_complexity(all_trajectory_data)
+    else:
+        o_info = 0.0
+        lz76 = 0.0
 
     # Only close the env if it was not a video env.
     if video_env is None:
@@ -192,7 +314,7 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
     worst_obj = -600
     obj = (total_reward - worst_obj) / (best_obj - worst_obj) * 100
 
-    return obj, impact_x_pos, impact_y_vel, trajectory
+    return obj, o_info, lz76, trajectory
 
 
 def simulate_parallel(client, sols, seed):
@@ -202,9 +324,9 @@ def simulate_parallel(client, sols, seed):
     objs, meas, trajectories = [], [], []
 
     # Process the results.
-    for obj, impact_x_pos, impact_y_vel, trajectory in results:
+    for obj, o_info, lz76, trajectory in results:
         objs.append(obj)
-        meas.append([impact_x_pos, impact_y_vel])
+        meas.append([o_info, lz76])
         trajectories.append(trajectory)
 
     return np.array(objs), np.array(meas), trajectories
@@ -233,7 +355,7 @@ def create_optimizer(
     Returns:
         Optimizer: A ribs Optimizer for running the algorithm.
     """
-    bounds = [(-1.0, 1.0), (-3.0, 0.0)]
+    bounds = [(-50.0, 50.0), (0.0, 200.0)]  # O-Information and LZ76 bounds
     initial_sol = np.zeros((dim,))
     batch_size = 36
     num_emitters = 15
@@ -715,7 +837,7 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
     restored_obj = df.tail(1).objective.iloc[0] / 100 * (best_obj -
                                                          worst_obj) + worst_obj
     print(
-        f" behavior_0(impact_x_pos):{df.tail(1).behavior_0.iloc[0]} \n behavior_1(impact_y_vel):{df.tail(1).behavior_1.iloc[0]} \n objective:{restored_obj}"
+        f" behavior_0(O-Information):{df.tail(1).behavior_0.iloc[0]} \n behavior_1(LZ76):{df.tail(1).behavior_1.iloc[0]} \n objective:{restored_obj}"
     )
     if outdir is None:
         plt.show()
@@ -737,8 +859,8 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
 
         with open(txt_path, 'w') as info_txt:
             info_txt.writelines([
-                f"behavior_0(impact_x_pos): {df.tail(1).behavior_0.iloc[0]}\n",
-                f"behavior_1(impact_y_vel): {df.tail(1).behavior_1.iloc[0]}\n",
+                f"behavior_0(O-Information): {df.tail(1).behavior_0.iloc[0]}\n",
+                f"behavior_1(LZ76): {df.tail(1).behavior_1.iloc[0]}\n",
                 f"objective               : {restored_obj}"
             ])
 
@@ -804,8 +926,8 @@ def show_interactive_archive(archive_path, seed):
         seed (int): Seed for the algorithm.
     
     Note:
-        measure_0(impact_x_pos) assumed to be in range [-1.0, 1.0]
-        measure_1(impact_y_vel) assumed to be in range [-3.0, 0.0]
+        measure_0(O-Information) assumed to be in range [-50.0, 50.0]
+        measure_1(LZ76) assumed to be in range [0.0, 200.0]
         archive resolution assumed to be 100x100. 
         objective score assumed to be in range [-600, 350]
             - empirically determined according to worst/best obj observed during training
@@ -818,8 +940,8 @@ def show_interactive_archive(archive_path, seed):
     cmap = _retrieve_cmap('viridis')
 
     # Change archive resolution and measure bounds here if needed.
-    lower_mea_bounds = (-1.0, -3.0)
-    upper_mea_bounds = (1.0, 0.0)
+    lower_mea_bounds = (-50.0, 0.0)
+    upper_mea_bounds = (50.0, 200.0)
     x_dim, y_dim = (100, 100)
     x_bounds = np.linspace(lower_mea_bounds[0], upper_mea_bounds[0], x_dim + 1)
     y_bounds = np.linspace(lower_mea_bounds[1], upper_mea_bounds[1], y_dim + 1)
@@ -860,7 +982,7 @@ def show_interactive_archive(archive_path, seed):
         worst_obj = -600
         restored_obj = matching_row.objective.iloc[0] / 100 * (best_obj - worst_obj) + worst_obj
         print(
-            f" behavior_0(impact_x_pos):{matching_row.behavior_0.iloc[0]} \n behavior_1(impact_y_vel):{matching_row.behavior_1.iloc[0]} \n objective:{restored_obj}"
+            f" behavior_0(O-Information):{matching_row.behavior_0.iloc[0]} \n behavior_1(LZ76):{matching_row.behavior_1.iloc[0]} \n objective:{restored_obj}"
         )
 
         env = gym.make("LunarLander-v2", render_mode="human")
