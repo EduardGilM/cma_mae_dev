@@ -73,6 +73,8 @@ class LinearNetwork(nn.Module):
 
 def kozachenko_leonenko_entropy(data, k=1):
     n_samples, n_dimensions = data.shape
+    data = data[~np.any(np.isnan(data), axis=1)]
+    n_samples, n_dimensions = data.shape
     if n_samples <= 1:
         return 0.0
 
@@ -275,7 +277,7 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
 
     # Compute O-Information and LZ76 from the trajectory
     # Get valid trajectory data (remove NaN values)
-    valid_mask = ~np.isnan(trajectory['state'][:, 0])
+    valid_mask = ~np.any(np.isnan(trajectory['state']), axis=1) & ~np.isnan(trajectory['action']) & ~np.isnan(trajectory['reward'])
     valid_states = trajectory['state'][valid_mask]
     valid_actions = trajectory['action'][valid_mask]
     valid_rewards = trajectory['reward'][valid_mask]
