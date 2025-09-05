@@ -176,7 +176,7 @@ def simulate(model, seed=None, video_env=None, save_video_to=None):
         # just creates their own copy of the environment instead of trying to
         # share the environment. This also makes the function "pure." However,
         # we should use the video_env if it is passed in.
-        env = gym.make("LunarLander-v2")
+        env = gym.make("LunarLander-v3")
     else:
         env = video_env
 
@@ -572,7 +572,7 @@ def run_experiment(algorithm,
     ]
 
     # Select the objective based on the input.
-    env = gym.make("LunarLander-v2")
+    env = gym.make("LunarLander-v3")
     action_dim = env.action_space.n
     obs_dim = env.observation_space.shape[0]
     dim = action_dim * obs_dim
@@ -841,7 +841,7 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
     )
     if outdir is None:
         plt.show()
-        env = gym.make("LunarLander-v2", render_mode="human")
+        env = gym.make("LunarLander-v3", render_mode="human")
         simulate(model, seed=seed, video_env=env, save_video_to=None)
     else:
         heatmap_path = os.path.join(outdir, "heatmap.png")
@@ -854,7 +854,7 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
         plt.savefig(heatmap_path)
         plt.close(plt.gcf())
 
-        env = gym.make("LunarLander-v2", render_mode="rgb_array")
+        env = gym.make("LunarLander-v3", render_mode="rgb_array")
         simulate(model, seed=seed, video_env=env, save_video_to=video_path)
 
         with open(txt_path, 'w') as info_txt:
@@ -985,7 +985,7 @@ def show_interactive_archive(archive_path, seed):
             f" behavior_0(O-Information):{matching_row.behavior_0.iloc[0]} \n behavior_1(LZ76):{matching_row.behavior_1.iloc[0]} \n objective:{restored_obj}"
         )
 
-        env = gym.make("LunarLander-v2", render_mode="human")
+        env = gym.make("LunarLander-v3", render_mode="human")
         simulate(model, seed=seed, video_env=env, save_video_to=None)
         env.close()
 
