@@ -782,8 +782,8 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
     plt.figure(figsize=(8, 6))
     cmap = _retrieve_cmap('viridis')
 
-    lower_mea_bounds = (-1.0, -3.0)
-    upper_mea_bounds = (1.0, 0.0)
+    lower_mea_bounds = (-50.0, 0.0)
+    upper_mea_bounds = (50.0, 200.0)
     x_dim, y_dim = (100, 100)
     x_bounds = np.linspace(lower_mea_bounds[0], upper_mea_bounds[0], x_dim + 1)
     y_bounds = np.linspace(lower_mea_bounds[1], upper_mea_bounds[1], y_dim + 1)
@@ -795,8 +795,8 @@ def play_policy(archive_path, max_mea, qcut_quantile, seed, outdir=None):
     ax = plt.gca()
     ax.set_xlim(lower_mea_bounds[0], upper_mea_bounds[0])
     ax.set_ylim(lower_mea_bounds[1], upper_mea_bounds[1])
-    plt.xlabel('impact position')
-    plt.ylabel('impact velocity')
+    plt.xlabel('O-Information')
+    plt.ylabel('LZ76')
 
     pcm_kwargs = {}
     vmin = 0
@@ -955,8 +955,8 @@ def show_interactive_archive(archive_path, seed):
     ax = plt.gca()
     ax.set_xlim(lower_mea_bounds[0], upper_mea_bounds[0])
     ax.set_ylim(lower_mea_bounds[1], upper_mea_bounds[1])
-    plt.xlabel('impact position')
-    plt.ylabel('impact velocity')
+    plt.xlabel('O-Information')
+    plt.ylabel('LZ76')
 
     pcm_kwargs = {}
     vmin = 0
